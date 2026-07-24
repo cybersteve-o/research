@@ -68,6 +68,23 @@ def compute_confidence(
     return round(_clamp(conf, 0.0, 1.0), 4)
 
 
+def impact_from_revenue_weight(revenue_weight: float) -> int:
+    """Map the summed revenue weight of affected own lines to impact 1..5
+    (spec §5.3: "KI benennt die Betroffenheit, Formel rechnet aus hinterlegten
+    Gewichten"). The LLM never sets this number directly.
+    """
+    w = _clamp(revenue_weight, 0.0, 1.0)
+    if w >= 0.40:
+        return 5
+    if w >= 0.25:
+        return 4
+    if w >= 0.12:
+        return 3
+    if w >= 0.04:
+        return 2
+    return 1
+
+
 def urgency_from_window(reaction_window_months: float | None) -> int:
     """Map a reaction window (months) to an urgency step 1..5 (spec §5.3).
 

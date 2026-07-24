@@ -1,0 +1,86 @@
+[
+  {
+    "id": "g01_eta_regulatory",
+    "url": "https://www.dibt.de/register/eta-24-0123",
+    "text": "Nordwall Systeme GmbH erhielt am 12. Juni 2024 die Europäische Technische Bewertung ETA-24/0123 für ein neues Verbundabdichtungssystem im Segment Fassade für den Markt DE.",
+    "source_class": "A",
+    "expect": "signal",
+    "expected_signal_type": "regulatory",
+    "expected_decision_link": ["E2", "E6"],
+    "must_include_terms": ["ETA-24/0123"],
+    "relevant": true
+  },
+  {
+    "id": "g02_hiring",
+    "url": "https://careers.altura.example/job/process-engineer-tr",
+    "text": "Altura Building Products sucht einen Process Engineer für ein neues Werk in Izmir, TR, mit Schwerpunkt Extrusion von Entkopplungsmatten.",
+    "source_class": "C",
+    "expect": "signal",
+    "expected_signal_type": "hiring",
+    "expected_decision_link": ["E4", "E6"],
+    "must_include_terms": ["Izmir"],
+    "relevant": true
+  },
+  {
+    "id": "g03_financial_margin",
+    "url": "https://reports.severn.example/q2-2024",
+    "text": "Die Bruttomarge von Severn Systems Ltd sank im Quartal um 3 Prozentpunkte auf 28 Prozent laut Geschäftsbericht.",
+    "source_class": "A",
+    "expect": "signal",
+    "expected_signal_type": "financial",
+    "expected_decision_link": ["E3"],
+    "must_include_terms": ["Bruttomarge"],
+    "relevant": true
+  },
+  {
+    "id": "g04_launch",
+    "url": "https://news.example/marmara-launch",
+    "text": "Marmara Yapı stellte auf der Messe eine neue Produktlinie für dünnschichtige Abdichtung vor, Markteinführung in TR angekündigt.",
+    "source_class": "B",
+    "expect": "signal",
+    "expected_signal_type": "launch",
+    "expected_decision_link": ["E2", "E5"],
+    "must_include_terms": ["Produktlinie"],
+    "relevant": true
+  },
+  {
+    "id": "g05_patent",
+    "url": "https://register.epo.example/EP1234567",
+    "text": "Ein Patent EP1234567 von CanardBuild Inc. beschreibt eine neue Verlegetechnik für Entkopplungsmatten mit reduzierter Aufbauhöhe.",
+    "source_class": "A",
+    "expect": "signal",
+    "expected_signal_type": "patent",
+    "expected_decision_link": ["E2", "E6"],
+    "must_include_terms": ["Patent"],
+    "relevant": true
+  },
+  {
+    "id": "g06_channel_tender",
+    "url": "https://tender.example/objekt-42",
+    "text": "In einer Ausschreibung für ein Objekt in DE wurde das Abdichtungssystem von Nordwall namentlich als Fachhandel-Sortiment vorgeschrieben.",
+    "source_class": "B",
+    "expect": "signal",
+    "expected_signal_type": "channel",
+    "expected_decision_link": ["E3", "E4"],
+    "must_include_terms": ["Ausschreibung"],
+    "relevant": true
+  },
+  {
+    "id": "g07_reject_hedge_de",
+    "url": "https://blog.example/severn-rumor",
+    "text": "Severn Systems dürfte wahrscheinlich bald die Preise senken, vermutlich um Marktanteile zu gewinnen.",
+    "source_class": "D",
+    "expect": "reject",
+    "reject_reason_contains": "hedge",
+    "relevant": false
+  },
+  {
+    "id": "g08_reject_hedge_en",
+    "url": "https://blog.example/altura-rumor",
+    "text": "Altura probably launches a new façade board and appears to target the renovation market soon.",
+    "source_class": "D",
+    "expect": "reject",
+    "reject_reason_contains": "hedge",
+    "relevant": false
+  }
+]

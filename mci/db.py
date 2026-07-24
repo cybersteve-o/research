@@ -74,6 +74,41 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS action_fields (
+    id TEXT PRIMARY KEY,
+    decision_category TEXT,
+    confidence REAL,
+    created_at TEXT,
+    data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_af_cat ON action_fields(decision_category);
+
+CREATE TABLE IF NOT EXISTS hypotheses (
+    id TEXT PRIMARY KEY,
+    competitor_id TEXT,
+    status TEXT,
+    data TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_type TEXT,
+    target_id TEXT,
+    verdict TEXT,
+    reason TEXT,
+    edited_payload TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    id TEXT PRIMARY KEY,
+    target_type TEXT,
+    target_ref TEXT,
+    cadence_days INTEGER,
+    last_run TEXT,
+    data TEXT NOT NULL
+);
 """
 
 
@@ -222,6 +257,116 @@ class Store:
             (since.isoformat(),),
         ).fetchall()
         return [Signal.model_validate_json(r["data"]) for r in rows]
+
+    # ---- Action fields (Handlungsfelder) ----------------------------------
+    def upsert_action_field(self, field) -> None:
+        self.conn.execute(
+            """INSERT OR REPLACE INTO action_fields
+               (id, decision_category, confidence, created_at, data)
+               VALUES (?,?,?,?,?)""",
+            (
+                field.id,
+                field.decision_category,
+                field.confidence,
+                field.created_at.isoformat(),
+                field.model_dump_json(),
+            ),
+        )
+        self.conn.commit()
+
+    def list_action_fields(self, decision_category: str | None = None) -> list:
+        from .decisions import ActionField
+
+        if decision_category:
+            rows = self.conn.execute(
+                "SELECT data FROM action_fields WHERE decision_category = ? "
+                "ORDER BY confidence DESC",
+                (decision_category,),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT data FROM action_fields ORDER BY created_at DESC"
+            ).fetchall()
+        return [ActionField.model_validate_json(r["data"]) for r in rows]
+
+    # ---- Hypotheses -------------------------------------------------------
+    def upsert_hypothesis(self, h) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO hypotheses(id, competitor_id, status, data) "
+            "VALUES (?,?,?,?)",
+            (h.id, h.competitor_id, h.status, h.model_dump_json()),
+        )
+        self.conn.commit()
+
+    def list_hypotheses(self, status: str | None = None) -> list:
+        from .models import Hypothesis
+
+        if status:
+            rows = self.conn.execute(
+                "SELECT data FROM hypotheses WHERE status = ?", (status,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute("SELECT data FROM hypotheses").fetchall()
+        return [Hypothesis.model_validate_json(r["data"]) for r in rows]
+
+    # ---- Feedback (Lernschleife) ------------------------------------------
+    def add_feedback(
+        self,
+        *,
+        target_type: str,
+        target_id: str,
+        verdict: str,
+        reason: str = "",
+        edited_payload: str = "",
+    ) -> None:
+        from datetime import datetime, timezone
+
+        self.conn.execute(
+            """INSERT INTO feedback
+               (target_type, target_id, verdict, reason, edited_payload, created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                target_type,
+                target_id,
+                verdict,
+                reason,
+                edited_payload,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        self.conn.commit()
+
+    def list_feedback(self, verdict: str | None = None) -> list[dict]:
+        if verdict:
+            rows = self.conn.execute(
+                "SELECT * FROM feedback WHERE verdict = ? ORDER BY id DESC", (verdict,)
+            ).fetchall()
+        else:
+            rows = self.conn.execute("SELECT * FROM feedback ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- Watchlist --------------------------------------------------------
+    def upsert_watchlist(self, item) -> None:
+        self.conn.execute(
+            """INSERT OR REPLACE INTO watchlist
+               (id, target_type, target_ref, cadence_days, last_run, data)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                item.id,
+                item.target_type,
+                item.target_ref,
+                item.cadence_days,
+                item.last_run.isoformat() if item.last_run else None,
+                item.model_dump_json(),
+            ),
+        )
+        self.conn.commit()
+
+    def list_watchlist(self) -> list:
+        from .watchlist import WatchlistItem
+
+        rows = self.conn.execute("SELECT data FROM watchlist").fetchall()
+        return [WatchlistItem.model_validate_json(r["data"]) for r in rows]
 
     # ---- Meta (e.g. last briefing timestamp) ------------------------------
     def set_meta(self, key: str, value: str) -> None:
