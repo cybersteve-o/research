@@ -10,9 +10,10 @@ tabs, so the tool reads as one workflow rather than a pile of features.
 This UI is optional; the core package and tests do not depend on Streamlit.
 
 Work areas (tabs): Übersicht (Lagebild, Frühwarnung, Assistent) · Recherche ·
-Signale · Wettbewerber (incl. anlegen/bearbeiten/löschen) · Märkte (Länder-
-Steckbrief + Referenzmärkte verwalten) · Trend-Radar · Entscheidungen · Szenario
-· Assistent · Briefing.
+Signale · Suche · Wettbewerber (incl. anlegen/bearbeiten/löschen) · Märkte
+(Länder-Steckbrief + Referenzmärkte verwalten) · Trend-Radar · Entscheidungen ·
+Nachhalten (Track Record + Quellen-Reliabilität) · Szenario · Assistent ·
+Briefing. The own-company profile lives in the sidebar.
 """
 
 from __future__ import annotations
@@ -35,8 +36,12 @@ from mci import (
     correlation,
     country,
     portfolio,
+    profile as profile_mod,
     recommendation as recommendation_mod,
+    reliability as reliability_mod,
     research,
+    search as search_mod,
+    tracking as tracking_mod,
     sentiment as sentiment_mod,
     sources,
     specshare,
@@ -44,6 +49,7 @@ from mci import (
     swot as swot_mod,
     trends as trends_mod,
 )
+from mci import chartdata, charts
 from mci import battlecard as battlecard_mod
 from mci import cadence as cadence_mod
 from mci import competitor as competitor_mod
@@ -53,6 +59,7 @@ from mci import watchlist as watchlist_mod
 from mci.briefing import generate_briefing, mark_briefing_sent, render_markdown
 from mci.config import SETTINGS
 from mci.db import Store
+from mci import demo_data
 from mci.demo import SAMPLES
 from mci.export import one_pager_markdown
 from mci.ingestion import extract_file, fetch_html, fetch_rss
@@ -164,6 +171,36 @@ with st.sidebar:
     )
     st.metric("Kostendeckel / Lauf", f"${SETTINGS.run_cost_cap_usd:.2f}")
     st.divider()
+    own = profile_mod.load(store)
+    with st.expander("🏭 Eigenes Profil" + ("" if own.configured else " — einrichten"),
+                     expanded=not own.configured):
+        st.caption("Relevanz, Portfolio-Lücken und der Recherche-Plan richten sich "
+                   "nach *deinen* Linien und Märkten. Ohne Profil gelten die "
+                   "Platzhalter aus der Demo.")
+        with st.form("own_profile"):
+            p_company = st.text_input("Unternehmen", value=own.company)
+            p_lines = st.text_input("Produktlinien (Komma-getrennt)",
+                                    value=", ".join(own.product_lines),
+                                    placeholder="z. B. AquaLine, DecoTrim")
+            p_markets = st.text_input("Fokusmärkte (Komma-getrennt)",
+                                      value=", ".join(own.focus_markets),
+                                      placeholder="z. B. DE, AT, US")
+            p_segments = st.text_input("Segmente (Komma-getrennt)",
+                                       value=", ".join(own.segments))
+            p_pos = st.text_area("Positionierung", value=own.positioning, height=68)
+            if st.form_submit_button("💾 Profil speichern", type="primary",
+                                     use_container_width=True):
+                profile_mod.save(store, profile_mod.OwnProfile(
+                    company=p_company.strip(), product_lines=_csv(p_lines),
+                    focus_markets=[m.upper() for m in _csv(p_markets)],
+                    segments=_csv(p_segments), positioning=p_pos.strip()))
+                st.success("Profil gespeichert.")
+                st.rerun()
+        if own.configured:
+            st.caption(f"✅ {own.company} · {', '.join(own.product_lines)} · "
+                       f"{', '.join(own.focus_markets)}")
+
+    st.divider()
     st.caption("**Beobachtete Wettbewerber**")
     for c in competitors:
         st.caption(f"· {c.name} ({c.country})")
@@ -190,15 +227,17 @@ k4.metric("Offene Wissenslücken", len(open_gaps),
 
 st.write("")
 
-(tab_home, tab_research, tab_signals, tab_comp, tab_markets, tab_trends, tab_dec,
- tab_scn, tab_chat, tab_brief) = st.tabs([
+(tab_home, tab_research, tab_signals, tab_search, tab_comp, tab_markets,
+ tab_trends, tab_dec, tab_track, tab_scn, tab_chat, tab_brief) = st.tabs([
     "🏠 Übersicht",
     "➕ Recherche & Eingabe",
     "📡 Signale",
+    "🔍 Suche",
     "🏢 Wettbewerber",
     "🌍 Märkte",
     "📈 Trend-Radar",
     "🎯 Entscheidungen",
+    "📒 Nachhalten",
     "🔮 Szenario (E8)",
     "💬 Assistent",
     "📤 Briefing & Export",
@@ -306,6 +345,31 @@ with tab_home:
                     delta=f"{int(s.confidence * 100)} % Konfidenz",
                 )
                 st.caption(s.headline)
+
+    ch1, ch2 = st.columns(2)
+    with ch1:
+        st.markdown("**Signalaufkommen je Monat**",
+                    help="Wie viele Signale pro Monat erfasst wurden, nach "
+                         "Bestätigungsgrad. Zeitpunkt = Veröffentlichung der Quelle.")
+        vol = chartdata.volume_rows(store)
+        c = charts.signals_over_time(vol)
+        if c is not None:
+            st.altair_chart(c, use_container_width=True)
+            with st.expander("Tabelle"):
+                st.dataframe(vol, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Noch keine Signale.")
+    with ch2:
+        st.markdown("**Aktivitäts-Zeitstrahl**",
+                    help="Wer hat wann gehandelt? Punktgröße = Priorität des Signals.")
+        tl = chartdata.timeline_rows(store)
+        c = charts.activity_timeline(tl)
+        if c is not None:
+            st.altair_chart(c, use_container_width=True)
+            with st.expander("Tabelle"):
+                st.dataframe(tl, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Noch keine Aktivitäten.")
 
     st.subheader(
         "Was ist neu seit deinem letzten Besuch?",
@@ -464,16 +528,32 @@ with tab_research:
     st.subheader(
         "Beispieldaten",
         divider="gray",
-        help="Lädt eine kleine, realistische Beispiel-Recherche, damit du sofort "
-             "ein befülltes Cockpit siehst (inkl. Triangulation und einer "
-             "abgelehnten Falschmeldung).",
+        help="Lädt eine realistische Beispiel-Recherche, damit du sofort ein "
+             "befülltes Cockpit siehst (inkl. Triangulation und abgelehnten "
+             "Falschmeldungen). Alles läuft durch die echte Pipeline.",
     )
-    if st.button("Beispiel-Recherche laden",
-                 help="Speist die Demo-Dokumente durch die volle Pipeline."):
-        added = 0
-        for doc in SAMPLES:
+    dcol1, dcol2 = st.columns(2)
+    if dcol1.button("🎬 Vollständige Demo laden", type="primary",
+                    use_container_width=True,
+                    help="~30 Dokumente über 14 Monate: Zulassungen, Launches, "
+                         "Preisbewegungen, Stellenanzeigen, Kundenstimmen und "
+                         "Marktdaten — füllt jeden Tab inkl. aller Diagramme."):
+        added = rejected = 0
+        for doc in demo_data.documents():
             res = pipe.ingest(doc)
             added += 1 if res.ok else 0
+            rejected += 0 if res.ok else 1
+        for note in demo_data.manual_notes():
+            if pipe.ingest(manual_entry(note, source_class=SourceClass.C)).ok:
+                added += 1
+        st.success(f"{added} Signale eingespeist · {rejected} durch die Guardrails "
+                   f"abgelehnt. Sieh dir „🏠 Übersicht“ und „📈 Trend-Radar“ an.")
+        st.rerun()
+    if dcol2.button("Kleine Stichprobe laden", use_container_width=True,
+                    help="Nur fünf Dokumente — zeigt Pipeline und Triangulation."):
+        added = 0
+        for doc in SAMPLES:
+            added += 1 if pipe.ingest(doc).ok else 0
         st.success(f"{added} Beispiel-Signale eingespeist. Wechsle zu „📡 Signale“.")
         st.rerun()
 
@@ -550,6 +630,69 @@ with tab_signals:
                 st.caption(f"prompt_version={s.prompt_version} · model={s.model_id} · "
                            f"audit_passed={s.audit_passed}")
                 st.code(s.reasoning_trace or "—")
+
+# --------------------------------------------------------------------------
+# TAB — Suche (full text + structured filters + saved views)
+# --------------------------------------------------------------------------
+with tab_search:
+    st.subheader(
+        "Volltextsuche",
+        divider="blue",
+        help="Durchsucht Überschrift, Fakt, Ableitung und die Quellenzitate. "
+             "Kombinierbar mit Filtern. Treffer werden nach Begriffsabdeckung "
+             "und Priorität sortiert — nachvollziehbar, keine Blackbox.",
+    )
+
+    views = search_mod.list_views(store)
+    if views:
+        vcol1, vcol2 = st.columns([3, 1])
+        chosen_view = vcol1.selectbox("Gespeicherte Sicht laden",
+                                      ["(keine)"] + list(views))
+        if chosen_view != "(keine)":
+            if vcol2.button("🗑️ Sicht löschen", use_container_width=True):
+                search_mod.delete_view(store, chosen_view)
+                st.rerun()
+            st.session_state["search_preset"] = views[chosen_view]
+
+    preset = st.session_state.get("search_preset", {})
+    q = st.text_input("Suchbegriffe", value=preset.get("query", ""),
+                      placeholder="z. B. Zulassung Fassade Sanierung")
+    sc1, sc2, sc3 = st.columns(3)
+    f_status = sc1.multiselect("Status", [s.value for s in SignalStatus],
+                               default=preset.get("statuses", []))
+    f_comp = sc2.multiselect("Wettbewerber", [c.name for c in competitors],
+                             default=preset.get("competitors", []))
+    f_days = sc3.slider("Zeitraum (Tage)", 0, 730, preset.get("since_days", 0),
+                        step=30, help="0 = ohne Zeitgrenze.")
+
+    hits = search_mod.search(
+        store, q,
+        statuses=[SignalStatus(s) for s in f_status] or None,
+        competitors=f_comp or None,
+        since_days=f_days or None,
+    )
+    st.caption(f"{len(hits)} Treffer")
+
+    with st.form("save_view"):
+        vname = st.text_input("Diese Suche speichern als",
+                              placeholder="z. B. „Preisdruck DE“")
+        if st.form_submit_button("💾 Sicht speichern") and vname.strip():
+            search_mod.save_view(store, vname.strip(), {
+                "query": q, "statuses": f_status, "competitors": f_comp,
+                "since_days": f_days})
+            st.success(f"Sicht „{vname.strip()}“ gespeichert.")
+            st.rerun()
+
+    for h in hits[:30]:
+        s = h.signal
+        who = ", ".join(s.entities.competitors or s.entities.markets) or "—"
+        with st.expander(f"**{priority_pct(s.priority)}** · "
+                         f"{STATUS_BADGE.get(s.status, '')} · {s.headline} · _{who}_"):
+            st.markdown(f"**Fakt:** {s.fact}")
+            if s.derivation:
+                st.markdown(f"**Ableitung:** {s.derivation}")
+            if h.matched_terms:
+                st.caption(f"🔎 {h.why}")
 
 # --------------------------------------------------------------------------
 # TAB 4 — Wettbewerber (dossier, cadence, battlecard, portfolio, spec-share)
@@ -720,15 +863,24 @@ with tab_comp:
                                f"{bs.neutral} neutral  (n={bs.n})")
                 else:
                     st.caption("Noch keine Stimmen zu dieser Marke erfasst.")
+                srows = chartdata.sentiment_rows(store)
+                sc = charts.sentiment_bars(srows)
+                if sc is not None and len(srows) > 1:
+                    st.altair_chart(sc, use_container_width=True)
 
         with st.container(border=True):
             st.markdown("**📊 Wettbewerbs-Matrix**",
                         help="Automatischer Aktivitätsvergleich aller Wettbewerber "
                              "(Launches, Zulassungen, Kapazität, Finanzen, Feedback, "
                              "Sentiment).")
+            mrows = chartdata.matrix_rows(store)
+            mc = charts.activity_matrix(mrows)
+            if mc is not None:
+                st.altair_chart(mc, use_container_width=True)
             rows = swot_mod.matrix(store)
             if rows:
-                st.dataframe(rows, use_container_width=True, hide_index=True)
+                with st.expander("Tabelle mit Details"):
+                    st.dataframe(rows, use_container_width=True, hide_index=True)
             else:
                 st.caption("Keine Wettbewerberdaten.")
 
@@ -751,12 +903,30 @@ with tab_trends:
     if not radar:
         st.info("Noch zu wenig Signale für ein Trendbild. Speise mehr News/Quellen ein.")
     else:
+        chart_rows = [{"term": t.term, "count": t.count, "momentum": t.momentum}
+                      for t in radar]
+        c = charts.trend_momentum(chart_rows)
+        if c is not None:
+            st.altair_chart(c, use_container_width=True)
         rows = [{"": t.arrow, "Trend": t.term, "Nennungen": t.count,
                  "Momentum": t.momentum,
                  "seit": f"{t.first_seen:%Y-%m}" if t.first_seen else "—"}
                 for t in radar]
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        with st.expander("Tabelle"):
+            st.dataframe(rows, use_container_width=True, hide_index=True)
         st.caption("🔼 steigend · ▶️ stabil · 🔽 fallend")
+
+        st.markdown("**Spec-Share — Anteil der Nennungen je Wettbewerber**",
+                    help="Proxy für Sichtbarkeit in Ausschreibungen/Listungen "
+                         "über die Zeit.")
+        ss = chartdata.spec_share_rows(store)
+        c2 = charts.spec_share_lines(ss)
+        if c2 is not None and len(ss) > 1:
+            st.altair_chart(c2, use_container_width=True)
+            with st.expander("Tabelle"):
+                st.dataframe(ss, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Noch zu wenige Nennungen für einen Verlauf.")
 
 # --------------------------------------------------------------------------
 # TAB 5 — Entscheidungen (synthesis, correlation, hypotheses, watchlist)
@@ -841,6 +1011,106 @@ with tab_dec:
             st.caption("Nichts fällig.")
         if open_gaps:
             st.caption("Offene Lücken: " + " · ".join(open_gaps[:5]))
+
+# --------------------------------------------------------------------------
+# TAB — Nachhalten (decision track record + source reliability)
+# --------------------------------------------------------------------------
+with tab_track:
+    st.subheader(
+        "Entscheidungs-Nachhalten",
+        divider="blue",
+        help="Was haben wir empfohlen — und was ist tatsächlich eingetreten? "
+             "Daraus entstehen Trefferquote und Optimismus-Bias. Das ist die "
+             "Selbstkontrolle, die ein Intelligence-Tool glaubwürdig macht.",
+    )
+    tr = tracking_mod.track_record(store)
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Entscheidungen", tr.total)
+    t2.metric("Offen", tr.open)
+    t3.metric("Trefferquote",
+              f"{tr.hit_rate:.0%}" if tr.hit_rate is not None else "—",
+              help="Anteil eingetretener Empfehlungen (teilweise zählt 0,5).")
+    t4.metric("Optimismus-Bias",
+              f"{tr.optimism_bias:+.2f}" if tr.optimism_bias is not None else "—",
+              help="> 0 bedeutet: zuversichtlicher prognostiziert als eingetreten.")
+    st.caption(f"Kalibrierung: **{tr.verdict}**")
+
+    fields_for_track = store.list_action_fields()
+    with st.expander("➕ Entscheidung festhalten", expanded=not tr.total):
+        with st.form("record_decision"):
+            if fields_for_track:
+                labels = [f"{f.decision_category} · {f.recommendation[:60]}"
+                          for f in fields_for_track]
+                fidx = st.selectbox("Handlungsfeld", range(len(fields_for_track)),
+                                    format_func=lambda i: labels[i])
+                src_field = fields_for_track[fidx]
+            else:
+                src_field = None
+                st.caption("Kein Handlungsfeld vorhanden — freie Erfassung.")
+            dec = st.text_area("Was wurde beschlossen?", height=80)
+            dc1, dc2 = st.columns(2)
+            owner = dc1.text_input("Verantwortlich")
+            review = dc2.text_input("Review-Datum", placeholder="YYYY-MM-DD")
+            if st.form_submit_button("💾 Festhalten", type="primary") and dec.strip():
+                tracking_mod.record_decision(
+                    store,
+                    field_id=src_field.id if src_field else "",
+                    decision_category=src_field.decision_category if src_field else "",
+                    recommendation=src_field.recommendation if src_field else "",
+                    decision=dec.strip(), owner=owner.strip(),
+                    confidence=src_field.confidence if src_field else 0.0,
+                    review_date=review.strip())
+                st.success("Entscheidung festgehalten.")
+                st.rerun()
+
+    records = store.list_decisions()
+    if not records:
+        st.info("Noch keine Entscheidungen festgehalten.")
+    for rec in records:
+        icon = {"offen": "🕓", "eingetreten": "✅", "teilweise": "🟡",
+                "nicht eingetreten": "❌", "verworfen": "⚪"}.get(rec.status, "•")
+        with st.expander(f"{icon} **{rec.decision_category or '—'}** · "
+                         f"{rec.decision[:70]} · _{rec.owner or 'ohne Owner'}_"):
+            if rec.recommendation:
+                st.markdown(f"**Empfehlung war:** {rec.recommendation}")
+            st.caption(f"Beschlossen {rec.decided_at:%Y-%m-%d} · Konfidenz "
+                       f"{rec.confidence_at_decision:.0%}"
+                       + (f" · Review {rec.review_date}" if rec.review_date else ""))
+            if rec.notes:
+                for n in rec.notes:
+                    st.markdown(f"- 💬 {n}")
+            rc1, rc2 = st.columns(2)
+            with rc1:
+                new_status = st.selectbox("Ergebnis", tracking_mod.STATUSES,
+                                          index=tracking_mod.STATUSES.index(rec.status),
+                                          key=f"st_{rec.id}")
+                if st.button("Ergebnis speichern", key=f"btn_{rec.id}"):
+                    tracking_mod.resolve(store, rec.id, status=new_status)
+                    st.rerun()
+            with rc2:
+                note = st.text_input("Kommentar", key=f"nt_{rec.id}")
+                if st.button("Kommentar hinzufügen", key=f"nb_{rec.id}") and note.strip():
+                    tracking_mod.add_note(store, rec.id, note)
+                    st.rerun()
+
+    st.subheader(
+        "Quellen-Reliabilität",
+        divider="gray",
+        help="Welche Quellen haben sich bewährt? Bewertet aus Quellenklasse plus "
+             "der tatsächlichen Bestätigungs-/Widerlegungs-Bilanz. Quellen mit "
+             "zu wenig Historie bleiben ehrlich „unbewertet“.",
+    )
+    scores = reliability_mod.score_sources(store)
+    if scores:
+        st.dataframe(
+            [{"": s.icon, "Quelle": s.publisher, "Klasse": s.source_class,
+              "Signale": s.n_signals, "bestätigt": s.confirmed,
+              "widerlegt": s.refuted,
+              "Score": f"{s.score:.2f}" if s.score is not None else "—",
+              "Bewertung": s.label} for s in scores],
+            use_container_width=True, hide_index=True)
+    else:
+        st.caption("Noch keine Quellen erfasst.")
 
 # --------------------------------------------------------------------------
 # TAB 6 — Szenario (E8 target check)
@@ -1078,8 +1348,27 @@ with tab_brief:
         idx = st.selectbox("Handlungsfeld", range(len(fields)),
                            format_func=lambda i: labels[i])
         op = one_pager_markdown(fields[idx], store)
-        st.download_button("⬇️ One-Pager (Markdown)", op,
-                           file_name="one_pager.md", use_container_width=True)
+        e1, e2, e3 = st.columns(3)
+        e1.download_button("⬇️ Markdown", op, file_name="one_pager.md",
+                           use_container_width=True)
+
+        # Board-ready formats — built on demand into the scratch dir.
+        import tempfile as _tf
+        from pathlib import Path as _P
+        try:
+            from mci.export import export_one_pager_docx, export_one_pager_pptx
+            tmpdir = _P(_tf.mkdtemp())
+            docx_path = export_one_pager_docx(fields[idx], store, tmpdir / "one_pager.docx")
+            e2.download_button("⬇️ Word (DOCX)", docx_path.read_bytes(),
+                               file_name="one_pager.docx", use_container_width=True,
+                               help="Komiteefertiges Dokument.")
+            pptx_path = export_one_pager_pptx(fields[idx], tmpdir / "one_pager.pptx")
+            e3.download_button("⬇️ PowerPoint (PPTX)", pptx_path.read_bytes(),
+                               file_name="one_pager.pptx", use_container_width=True,
+                               help="Folie für die Gremiensitzung.")
+        except Exception as exc:  # noqa: BLE001
+            e2.caption(f"DOCX/PPTX nicht verfügbar: {exc}")
+
         with st.expander("Vorschau"):
             st.markdown(op)
     else:
