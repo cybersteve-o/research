@@ -180,6 +180,16 @@ class Store:
         rows = self.conn.execute("SELECT data FROM competitors ORDER BY name").fetchall()
         return [Competitor.model_validate_json(r["data"]) for r in rows]
 
+    def get_competitor(self, competitor_id: str) -> Competitor | None:
+        row = self.conn.execute(
+            "SELECT data FROM competitors WHERE id=?", (competitor_id,)
+        ).fetchone()
+        return Competitor.model_validate_json(row["data"]) if row else None
+
+    def delete_competitor(self, competitor_id: str) -> None:
+        self.conn.execute("DELETE FROM competitors WHERE id=?", (competitor_id,))
+        self.conn.commit()
+
     def upsert_product(self, p: Product) -> None:
         self.conn.execute(
             "INSERT OR REPLACE INTO products(id, data) VALUES (?,?)", (p.id, _dump(p))
@@ -199,6 +209,16 @@ class Store:
     def list_markets(self) -> list[Market]:
         rows = self.conn.execute("SELECT data FROM markets").fetchall()
         return [Market.model_validate_json(r["data"]) for r in rows]
+
+    def get_market(self, market_id: str) -> Market | None:
+        row = self.conn.execute(
+            "SELECT data FROM markets WHERE id=?", (market_id,)
+        ).fetchone()
+        return Market.model_validate_json(row["data"]) if row else None
+
+    def delete_market(self, market_id: str) -> None:
+        self.conn.execute("DELETE FROM markets WHERE id=?", (market_id,))
+        self.conn.commit()
 
     # ---- Signals -----------------------------------------------------------
     def upsert_signal(self, s: Signal) -> None:
