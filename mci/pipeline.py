@@ -160,8 +160,20 @@ class Pipeline:
         for line in self.focus_lines:
             if line.lower() in low and line not in products:
                 products.append(line)
+        # Resolve tracked competitors by name or alias. The extractor may miss a
+        # company (the offline heuristic has no NER), but the watchlist is known,
+        # so match against it — otherwise dossier, cadence, SWOT and sentiment
+        # would all stay empty even though the text names the competitor.
+        competitors = list(result.entities.competitors)
+        for comp in self.store.list_competitors():
+            if comp.name in competitors:
+                continue
+            needles = [comp.name, *(comp.aliases or [])]
+            if any(re.search(rf"\b{re.escape(n)}", raw.text, re.IGNORECASE)
+                   for n in needles if n):
+                competitors.append(comp.name)
         return SignalEntities(
-            competitors=result.entities.competitors,
+            competitors=competitors,
             products=products,
             markets=markets,
         )

@@ -44,6 +44,7 @@ from mci import (
     swot as swot_mod,
     trends as trends_mod,
 )
+from mci import chartdata, charts
 from mci import battlecard as battlecard_mod
 from mci import cadence as cadence_mod
 from mci import competitor as competitor_mod
@@ -53,6 +54,7 @@ from mci import watchlist as watchlist_mod
 from mci.briefing import generate_briefing, mark_briefing_sent, render_markdown
 from mci.config import SETTINGS
 from mci.db import Store
+from mci import demo_data
 from mci.demo import SAMPLES
 from mci.export import one_pager_markdown
 from mci.ingestion import extract_file, fetch_html, fetch_rss
@@ -307,6 +309,31 @@ with tab_home:
                 )
                 st.caption(s.headline)
 
+    ch1, ch2 = st.columns(2)
+    with ch1:
+        st.markdown("**Signalaufkommen je Monat**",
+                    help="Wie viele Signale pro Monat erfasst wurden, nach "
+                         "Bestätigungsgrad. Zeitpunkt = Veröffentlichung der Quelle.")
+        vol = chartdata.volume_rows(store)
+        c = charts.signals_over_time(vol)
+        if c is not None:
+            st.altair_chart(c, use_container_width=True)
+            with st.expander("Tabelle"):
+                st.dataframe(vol, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Noch keine Signale.")
+    with ch2:
+        st.markdown("**Aktivitäts-Zeitstrahl**",
+                    help="Wer hat wann gehandelt? Punktgröße = Priorität des Signals.")
+        tl = chartdata.timeline_rows(store)
+        c = charts.activity_timeline(tl)
+        if c is not None:
+            st.altair_chart(c, use_container_width=True)
+            with st.expander("Tabelle"):
+                st.dataframe(tl, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Noch keine Aktivitäten.")
+
     st.subheader(
         "Was ist neu seit deinem letzten Besuch?",
         divider="gray",
@@ -464,16 +491,32 @@ with tab_research:
     st.subheader(
         "Beispieldaten",
         divider="gray",
-        help="Lädt eine kleine, realistische Beispiel-Recherche, damit du sofort "
-             "ein befülltes Cockpit siehst (inkl. Triangulation und einer "
-             "abgelehnten Falschmeldung).",
+        help="Lädt eine realistische Beispiel-Recherche, damit du sofort ein "
+             "befülltes Cockpit siehst (inkl. Triangulation und abgelehnten "
+             "Falschmeldungen). Alles läuft durch die echte Pipeline.",
     )
-    if st.button("Beispiel-Recherche laden",
-                 help="Speist die Demo-Dokumente durch die volle Pipeline."):
-        added = 0
-        for doc in SAMPLES:
+    dcol1, dcol2 = st.columns(2)
+    if dcol1.button("🎬 Vollständige Demo laden", type="primary",
+                    use_container_width=True,
+                    help="~30 Dokumente über 14 Monate: Zulassungen, Launches, "
+                         "Preisbewegungen, Stellenanzeigen, Kundenstimmen und "
+                         "Marktdaten — füllt jeden Tab inkl. aller Diagramme."):
+        added = rejected = 0
+        for doc in demo_data.documents():
             res = pipe.ingest(doc)
             added += 1 if res.ok else 0
+            rejected += 0 if res.ok else 1
+        for note in demo_data.manual_notes():
+            if pipe.ingest(manual_entry(note, source_class=SourceClass.C)).ok:
+                added += 1
+        st.success(f"{added} Signale eingespeist · {rejected} durch die Guardrails "
+                   f"abgelehnt. Sieh dir „🏠 Übersicht“ und „📈 Trend-Radar“ an.")
+        st.rerun()
+    if dcol2.button("Kleine Stichprobe laden", use_container_width=True,
+                    help="Nur fünf Dokumente — zeigt Pipeline und Triangulation."):
+        added = 0
+        for doc in SAMPLES:
+            added += 1 if pipe.ingest(doc).ok else 0
         st.success(f"{added} Beispiel-Signale eingespeist. Wechsle zu „📡 Signale“.")
         st.rerun()
 
@@ -720,15 +763,24 @@ with tab_comp:
                                f"{bs.neutral} neutral  (n={bs.n})")
                 else:
                     st.caption("Noch keine Stimmen zu dieser Marke erfasst.")
+                srows = chartdata.sentiment_rows(store)
+                sc = charts.sentiment_bars(srows)
+                if sc is not None and len(srows) > 1:
+                    st.altair_chart(sc, use_container_width=True)
 
         with st.container(border=True):
             st.markdown("**📊 Wettbewerbs-Matrix**",
                         help="Automatischer Aktivitätsvergleich aller Wettbewerber "
                              "(Launches, Zulassungen, Kapazität, Finanzen, Feedback, "
                              "Sentiment).")
+            mrows = chartdata.matrix_rows(store)
+            mc = charts.activity_matrix(mrows)
+            if mc is not None:
+                st.altair_chart(mc, use_container_width=True)
             rows = swot_mod.matrix(store)
             if rows:
-                st.dataframe(rows, use_container_width=True, hide_index=True)
+                with st.expander("Tabelle mit Details"):
+                    st.dataframe(rows, use_container_width=True, hide_index=True)
             else:
                 st.caption("Keine Wettbewerberdaten.")
 
@@ -751,12 +803,30 @@ with tab_trends:
     if not radar:
         st.info("Noch zu wenig Signale für ein Trendbild. Speise mehr News/Quellen ein.")
     else:
+        chart_rows = [{"term": t.term, "count": t.count, "momentum": t.momentum}
+                      for t in radar]
+        c = charts.trend_momentum(chart_rows)
+        if c is not None:
+            st.altair_chart(c, use_container_width=True)
         rows = [{"": t.arrow, "Trend": t.term, "Nennungen": t.count,
                  "Momentum": t.momentum,
                  "seit": f"{t.first_seen:%Y-%m}" if t.first_seen else "—"}
                 for t in radar]
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        with st.expander("Tabelle"):
+            st.dataframe(rows, use_container_width=True, hide_index=True)
         st.caption("🔼 steigend · ▶️ stabil · 🔽 fallend")
+
+        st.markdown("**Spec-Share — Anteil der Nennungen je Wettbewerber**",
+                    help="Proxy für Sichtbarkeit in Ausschreibungen/Listungen "
+                         "über die Zeit.")
+        ss = chartdata.spec_share_rows(store)
+        c2 = charts.spec_share_lines(ss)
+        if c2 is not None and len(ss) > 1:
+            st.altair_chart(c2, use_container_width=True)
+            with st.expander("Tabelle"):
+                st.dataframe(ss, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Noch zu wenige Nennungen für einen Verlauf.")
 
 # --------------------------------------------------------------------------
 # TAB 5 — Entscheidungen (synthesis, correlation, hypotheses, watchlist)
@@ -1078,8 +1148,27 @@ with tab_brief:
         idx = st.selectbox("Handlungsfeld", range(len(fields)),
                            format_func=lambda i: labels[i])
         op = one_pager_markdown(fields[idx], store)
-        st.download_button("⬇️ One-Pager (Markdown)", op,
-                           file_name="one_pager.md", use_container_width=True)
+        e1, e2, e3 = st.columns(3)
+        e1.download_button("⬇️ Markdown", op, file_name="one_pager.md",
+                           use_container_width=True)
+
+        # Board-ready formats — built on demand into the scratch dir.
+        import tempfile as _tf
+        from pathlib import Path as _P
+        try:
+            from mci.export import export_one_pager_docx, export_one_pager_pptx
+            tmpdir = _P(_tf.mkdtemp())
+            docx_path = export_one_pager_docx(fields[idx], store, tmpdir / "one_pager.docx")
+            e2.download_button("⬇️ Word (DOCX)", docx_path.read_bytes(),
+                               file_name="one_pager.docx", use_container_width=True,
+                               help="Komiteefertiges Dokument.")
+            pptx_path = export_one_pager_pptx(fields[idx], tmpdir / "one_pager.pptx")
+            e3.download_button("⬇️ PowerPoint (PPTX)", pptx_path.read_bytes(),
+                               file_name="one_pager.pptx", use_container_width=True,
+                               help="Folie für die Gremiensitzung.")
+        except Exception as exc:  # noqa: BLE001
+            e2.caption(f"DOCX/PPTX nicht verfügbar: {exc}")
+
         with st.expander("Vorschau"):
             st.markdown(op)
     else:
