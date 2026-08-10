@@ -12,6 +12,16 @@ This UI is optional; the core package and tests do not depend on Streamlit.
 
 from __future__ import annotations
 
+import os
+import sys
+
+# Make `import mci` work when the app is launched as a script (e.g.
+# `streamlit run mci/app.py` or on Streamlit Cloud), where only this file's
+# own folder is on sys.path — not the repo root that holds the `mci` package.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 import streamlit as st
 
 from mci import (
