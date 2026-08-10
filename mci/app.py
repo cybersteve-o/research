@@ -30,6 +30,7 @@ from mci import (
     correlation,
     country,
     portfolio,
+    recommendation as recommendation_mod,
     research,
     sentiment as sentiment_mod,
     sources,
@@ -196,6 +197,72 @@ st.write("")
 # TAB 1 — Übersicht (Lage + Veränderung seit letztem Besuch)
 # --------------------------------------------------------------------------
 with tab_home:
+    st.subheader(
+        "🧠 Lagebild & Empfehlung",
+        divider="blue",
+        help="Synthese über die gesamte Datenbasis: Was sagt uns die "
+             "Informationslage (Befunde), welche Schlüsse folgen (Konklusionen) "
+             "und was ist zu tun (priorisierte Empfehlungen)? Regelbasiert, mit "
+             "Konfidenz und offenen Wissenslücken.",
+    )
+    rep = recommendation_mod.build(store)
+    r1, r2, r3 = st.columns(3)
+    r1.metric("Signale", rep.n_signals)
+    r2.metric("Bestätigt", rep.n_confirmed)
+    r3.metric("Konfidenz Gesamtbild", f"{rep.confidence:.0%}",
+              help="Anteil belegter (triangulierter) Signale, abzüglich offener Lücken.")
+
+    cf, cc = st.columns(2)
+    with cf:
+        st.markdown("**Befunde — was die Daten zeigen**")
+        if rep.findings:
+            for f in rep.findings:
+                st.markdown(f"- {f}")
+        else:
+            st.caption("Noch keine Befunde.")
+    with cc:
+        st.markdown("**Schlüsse — was daraus folgt**")
+        if rep.conclusions:
+            for c in rep.conclusions:
+                st.markdown(f"- {c}")
+        else:
+            st.caption("Noch keine Schlüsse ableitbar.")
+
+    st.markdown("**Empfehlungen — priorisiert**")
+    if rep.recommendations:
+        badge = {"hoch": "🔴", "mittel": "🟠", "niedrig": "🟡"}
+        for r in rep.recommendations:
+            links = f" · [{', '.join(r.decision_link)}]" if r.decision_link else ""
+            st.markdown(f"{badge.get(r.priority, '•')} **{r.action}** — {r.rationale} "
+                        f"_(Konfidenz {r.confidence:.0%}{links})_")
+    else:
+        st.caption("Noch keine Empfehlungen — Datenbasis aufbauen.")
+    if rep.open_gaps:
+        st.caption("Offene Wissenslücken: " + " · ".join(rep.open_gaps))
+
+    with st.container(border=True):
+        st.markdown("**🤖 KI-Assistent** — Lagebild zusammenfassen oder gezielt fragen",
+                    help="Der Assistent antwortet nur aus belegten Signalen. Die "
+                         "Zusammenfassung wird aus dem Lagebild oben erzeugt.")
+        ac1, ac2 = st.columns([1, 2])
+        with ac1:
+            if st.button("📝 Zusammenfassung generieren", use_container_width=True):
+                st.session_state["home_summary"] = recommendation_mod.narrative(rep)
+        if st.session_state.get("home_summary"):
+            st.info(st.session_state["home_summary"])
+        with ac2:
+            aq = st.text_input("Frage an den Assistenten",
+                               placeholder="z. B. „Was macht Nordwall bei Zulassungen?“",
+                               label_visibility="collapsed")
+        if aq and aq.strip():
+            ans = assistant_mod.answer(store, aq)
+            st.markdown(ans.text)
+            st.caption(ans.confidence_note)
+            for c in ans.citations[:3]:
+                st.markdown(f"> „{c.quote}“ — {c.source}")
+            if ans.follow_up_query:
+                st.caption(f"🔎 Rechercheauftrag: `{ans.follow_up_query}`")
+
     st.subheader(
         "🚨 Frühwarnsystem",
         divider="red",
