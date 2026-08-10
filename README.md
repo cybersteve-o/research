@@ -93,6 +93,7 @@ Quellen ─► Ingestion ─► Extraktion ─► Auditor ─► Scoring ─► 
 | `mci/swot.py` | Competitive matrix + rule-derived SWOT per competitor | §4 |
 | `mci/trends.py` | Trend-Radar: rising-term momentum before mainstream | §4 |
 | `mci/assistant.py` | Evidence-grounded chat assistant (answers only from stored sources) | §4 |
+| `mci/recommendation.py` | Overall situation report: findings → conclusions → prioritised recommendations across the whole data basis | §4, §5.4 |
 
 ### Phase 3 — forecasting & scenarios
 
