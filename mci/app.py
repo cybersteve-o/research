@@ -14,7 +14,20 @@ from __future__ import annotations
 
 import streamlit as st
 
-from mci import correlation, country, portfolio, research, specshare
+from mci import (
+    alerts as alerts_mod,
+    assistant as assistant_mod,
+    correlation,
+    country,
+    portfolio,
+    research,
+    sentiment as sentiment_mod,
+    sources,
+    specshare,
+    summarize as summarize_mod,
+    swot as swot_mod,
+    trends as trends_mod,
+)
 from mci import battlecard as battlecard_mod
 from mci import cadence as cadence_mod
 from mci import competitor as competitor_mod
@@ -26,7 +39,8 @@ from mci.config import SETTINGS
 from mci.db import Store
 from mci.demo import SAMPLES
 from mci.export import one_pager_markdown
-from mci.ingestion import fetch_html
+from mci.ingestion import extract_file, fetch_html, fetch_rss
+from mci.ingestion.feeds import CURATED_FEEDS, google_news_search_rss
 from mci.ingestion.manual import manual_entry
 from mci.models import SignalStatus, SourceClass
 from mci.pipeline import Pipeline
@@ -155,13 +169,16 @@ k4.metric("Offene Wissenslücken", len(open_gaps),
 
 st.write("")
 
-tab_home, tab_research, tab_signals, tab_comp, tab_dec, tab_scn, tab_brief = st.tabs([
+(tab_home, tab_research, tab_signals, tab_comp, tab_trends, tab_dec,
+ tab_scn, tab_chat, tab_brief) = st.tabs([
     "🏠 Übersicht",
     "➕ Recherche & Eingabe",
     "📡 Signale",
     "🏢 Wettbewerber",
+    "📈 Trend-Radar",
     "🎯 Entscheidungen",
     "🔮 Szenario (E8)",
+    "💬 Assistent",
     "📤 Briefing & Export",
 ])
 
@@ -169,6 +186,20 @@ tab_home, tab_research, tab_signals, tab_comp, tab_dec, tab_scn, tab_brief = st.
 # TAB 1 — Übersicht (Lage + Veränderung seit letztem Besuch)
 # --------------------------------------------------------------------------
 with tab_home:
+    st.subheader(
+        "🚨 Frühwarnsystem",
+        divider="red",
+        help="Meldet sofort Preisänderungen, neue Produkte und Zulassungen der "
+             "Wettbewerber. Regelbasiert und mit Quell-Signal — keine Blackbox.",
+    )
+    active_alerts = alerts_mod.detect(store)
+    if not active_alerts:
+        st.caption("Keine akuten Frühwarnungen im Zeitfenster.")
+    else:
+        for a in active_alerts[:6]:
+            st.markdown(f"{a.icon} **{a.kind}** · _{a.entity}_ · {a.headline}  "
+                        f"`{a.at:%Y-%m-%d}`")
+
     st.subheader(
         "Lage in 10 Sekunden",
         divider="blue",
@@ -254,6 +285,57 @@ with tab_research:
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"Ingestion fehlgeschlagen: {exc}")
 
+    col_c, col_d = st.columns(2)
+    with col_c:
+        with st.container(border=True):
+            st.markdown("**📄 Datei einspielen (PDF & mehr)**")
+            st.caption("PDF, TXT, Markdown, CSV, HTML. PDFs werden seitenweise mit "
+                       "Seitenlokator als Evidenz erfasst.")
+            up = st.file_uploader(
+                "Datei(en) wählen", type=["pdf", "txt", "md", "csv", "tsv", "html", "htm", "json"],
+                accept_multiple_files=True, label_visibility="collapsed",
+                help="Eigene Berichte, Studien, Kataloge, Preislisten oder gespeicherte Artikel.")
+            klass_f = st.selectbox("Quellenklasse", [c.value for c in SourceClass], index=0,
+                                   key="fileclass",
+                                   help="Eigene Dokumente/Studien i. d. R. A.")
+            if st.button("Dateien extrahieren", type="primary", disabled=not up):
+                import tempfile as _tmp
+                from pathlib import Path as _Path
+                added = 0
+                for uf in up or []:
+                    tmp = _Path(_tmp.mkdtemp()) / uf.name
+                    tmp.write_bytes(uf.getbuffer())
+                    try:
+                        for doc in extract_file(tmp, source_class=SourceClass(klass_f)):
+                            added += 1 if pipe.ingest(doc).ok else 0
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"{uf.name}: {exc}")
+                if added:
+                    st.success(f"{added} Signal(e) aus Datei(en) extrahiert.")
+
+    with col_d:
+        with st.container(border=True):
+            st.markdown("**🌐 News weltweit (RSS)**")
+            st.caption("Google-News-Feeds pro Thema oder Länder-Edition. News sind "
+                       "schwache Evidenz — erst mit Zweitquelle wird daraus „bestätigt“.")
+            topic = st.text_input("Thema / Suchbegriff",
+                                  placeholder="z. B. Wettbewerbername, „Fassadenplatte Zulassung“")
+            edition = st.selectbox("Länder-Edition (Top-News)", ["(keine)"] + list(CURATED_FEEDS),
+                                   help="Alternativ zum Thema: die Top-News einer Weltregion.")
+            limit = st.slider("Max. Einträge", 3, 25, 8)
+            if st.button("News abrufen & extrahieren", type="primary"):
+                feed = (google_news_search_rss(topic) if topic.strip()
+                        else CURATED_FEEDS.get(edition) if edition != "(keine)" else None)
+                if not feed:
+                    st.warning("Thema eingeben oder eine Länder-Edition wählen.")
+                else:
+                    try:
+                        docs = fetch_rss(feed, limit=limit)
+                        added = sum(1 for d in docs if pipe.ingest(d).ok)
+                        st.success(f"{added}/{len(docs)} News-Einträge zu Signalen verdichtet.")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"News-Abruf fehlgeschlagen: {exc}")
+
     st.subheader(
         "🔎 Recherche-Assistent (lückengetrieben)",
         divider="gray",
@@ -273,6 +355,23 @@ with tab_research:
             with top[1]:
                 link_md = "  ·  ".join(f"[{name}]({href})" for name, href in sq.links.items())
                 st.markdown("🔗 " + link_md)
+
+    st.subheader(
+        "🏛️ Autoritative Quellen weltweit",
+        divider="gray",
+        help="Kuratiertes Register belastbarer Erstquellen je Markt — "
+             "Zulassungs-/Norm-/Patent-/Statistikstellen. Immer von einer "
+             "reputablen Quelle aus starten, nie von einem Blog.",
+    )
+    mkt = st.selectbox(
+        "Markt", [c for c, _ in sources.WORLD_MARKETS],
+        format_func=sources.market_name,
+        help="Weltmärkte — nicht auf den Heimatmarkt beschränkt.")
+    auth = sources.authoritative_for(mkt)
+    acols = st.columns(2)
+    for i, s in enumerate(auth):
+        with acols[i % 2]:
+            st.markdown(f"[{s.name}]({s.url}) · `{s.klass}` — {s.scope}")
 
     st.subheader(
         "Beispieldaten",
@@ -460,13 +559,85 @@ with tab_comp:
             st.markdown("**🌍 Länder-Steckbrief**",
                         help="Marktprofil je Fokusland: Bauindikatoren, Regulatorik, "
                              "Wettbewerberdichte.")
-            cty = st.selectbox("Land", FOCUS_MARKETS or ["DE"])
+            cty = st.selectbox("Land", [c for c, _ in sources.WORLD_MARKETS],
+                               format_func=sources.market_name)
             prof = country.build(store, cty)
             cc1, cc2 = st.columns(2)
             cc1.metric("Wettbewerberdichte", prof.competitor_density)
             cc2.metric("Bauindikatoren", len(prof.construction_indicators))
             if prof.competitors:
                 st.caption("Präsent: " + ", ".join(prof.competitors))
+
+        cols_sw = st.columns(2)
+        with cols_sw[0]:
+            with st.container(border=True):
+                st.markdown("**🧭 SWOT-Analyse**",
+                            help="Stärken/Schwächen/Chancen/Risiken, regelbasiert aus "
+                                 "den Signalen abgeleitet (Interpretation, kein Fakt).")
+                sw = swot_mod.swot(store, chosen.id)
+                if sw and not sw.is_empty():
+                    for title, items in (("💪 Stärken", sw.strengths),
+                                         ("⚠️ Schwächen", sw.weaknesses),
+                                         ("🌱 Chancen", sw.opportunities),
+                                         ("⛈️ Risiken", sw.threats)):
+                        if items:
+                            st.markdown(f"**{title}**")
+                            for it in items:
+                                st.markdown(f"- {it}")
+                else:
+                    st.caption("Zu wenig Signale für eine SWOT.")
+        with cols_sw[1]:
+            with st.container(border=True):
+                st.markdown("**😊 Sentiment (Voice of Customer)**",
+                            help="Ob die erfassten Kunden-/Marktstimmen positiv oder "
+                                 "negativ über die Marke sprechen. Lexikonbasiert.")
+                bs = next((b for b in sentiment_mod.competitor_sentiment(store)
+                           if b.competitor == chosen.name), None)
+                if bs:
+                    icon = {"positiv": "🟢", "negativ": "🔴", "neutral": "⚪"}[bs.label]
+                    st.metric("Tendenz", f"{icon} {bs.label}",
+                              delta=f"Score {bs.avg_score:+.2f}")
+                    st.caption(f"{bs.positive} positiv · {bs.negative} negativ · "
+                               f"{bs.neutral} neutral  (n={bs.n})")
+                else:
+                    st.caption("Noch keine Stimmen zu dieser Marke erfasst.")
+
+        with st.container(border=True):
+            st.markdown("**📊 Wettbewerbs-Matrix**",
+                        help="Automatischer Aktivitätsvergleich aller Wettbewerber "
+                             "(Launches, Zulassungen, Kapazität, Finanzen, Feedback, "
+                             "Sentiment).")
+            rows = swot_mod.matrix(store)
+            if rows:
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+            else:
+                st.caption("Keine Wettbewerberdaten.")
+
+# --------------------------------------------------------------------------
+# TAB — Trend-Radar
+# --------------------------------------------------------------------------
+with tab_trends:
+    st.subheader(
+        "Trend-Radar",
+        divider="blue",
+        help="Zeigt aufkommende Themen anhand ihres Momentums — wie viel häufiger "
+             "ein Begriff in der jüngeren als in der älteren Hälfte des Zeitfensters "
+             "auftaucht. Steigende Begriffe sind das frühe, schwache Signal, bevor "
+             "ein Trend Mainstream wird.",
+    )
+    cwin1, cwin2 = st.columns(2)
+    win = cwin1.slider("Zeitfenster (Tage)", 30, 365, 180, step=30)
+    minc = cwin2.slider("Mindest-Nennungen", 2, 6, 2)
+    radar = trends_mod.radar(store, window_days=win, min_count=minc)
+    if not radar:
+        st.info("Noch zu wenig Signale für ein Trendbild. Speise mehr News/Quellen ein.")
+    else:
+        rows = [{"": t.arrow, "Trend": t.term, "Nennungen": t.count,
+                 "Momentum": t.momentum,
+                 "seit": f"{t.first_seen:%Y-%m}" if t.first_seen else "—"}
+                for t in radar]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.caption("🔼 steigend · ▶️ stabil · 🔽 fallend")
 
 # --------------------------------------------------------------------------
 # TAB 5 — Entscheidungen (synthesis, correlation, hypotheses, watchlist)
@@ -568,7 +739,8 @@ with tab_scn:
         c1, c2, c3 = st.columns(3)
         target = c1.number_input("Ziel: +pp Marktanteil", value=2.0, step=0.5,
                                  help="Angestrebter Marktanteilsgewinn in Prozentpunkten.")
-        market = c2.selectbox("Markt", FOCUS_MARKETS or ["DE"])
+        market = c2.selectbox("Markt", [c for c, _ in sources.WORLD_MARKETS],
+                              format_func=sources.market_name)
         horizon = c3.number_input("Horizont (Monate)", value=24, step=6, min_value=6)
 
         st.markdown("**Treiber 1 — Listungstiefe**")
@@ -629,6 +801,52 @@ with tab_scn:
             st.warning(f"⚠️ {sim.denominator_warning}")
         if sim.incomplete:
             st.error("Szenario unvollständig: Wettbewerber-Reaktion nicht modelliert.")
+
+# --------------------------------------------------------------------------
+# TAB — Chat-Assistent + Zusammenfassung
+# --------------------------------------------------------------------------
+with tab_chat:
+    st.subheader(
+        "Chat-Assistent",
+        divider="blue",
+        help="Frag in natürlicher Sprache, z. B. „Was macht Nordwall bei "
+             "Zulassungen?“. Der Assistent antwortet ausschließlich aus den "
+             "erfassten, quellenbelegten Signalen — und sagt ehrlich „kein "
+             "Beleg“, statt Zahlen zu erfinden.",
+    )
+    if "chat" not in st.session_state:
+        st.session_state.chat = []
+    for role, content in st.session_state.chat:
+        with st.chat_message(role):
+            st.markdown(content)
+
+    q = st.chat_input("Frage zu Wettbewerbern, Signalen, Märkten …")
+    if q:
+        st.session_state.chat.append(("user", q))
+        with st.chat_message("user"):
+            st.markdown(q)
+        ans = assistant_mod.answer(store, q)
+        parts = [ans.text, f"\n\n_{ans.confidence_note}_"]
+        for c in ans.citations:
+            parts.append(f"\n> „{c.quote}“ — {c.source}")
+        if ans.follow_up_query:
+            parts.append(f"\n\n🔎 Rechercheauftrag: `{ans.follow_up_query}`")
+        reply = "".join(parts)
+        st.session_state.chat.append(("assistant", reply))
+        with st.chat_message("assistant"):
+            st.markdown(reply)
+
+    st.subheader(
+        "Automatische Zusammenfassung",
+        divider="gray",
+        help="Fasst einen langen Text (Bericht/Studie) extraktiv in wenige Sätze "
+             "zusammen — es werden nur Sätze zurückgegeben, die im Original stehen.",
+    )
+    long = st.text_area("Text einfügen", height=150,
+                        placeholder="Langen Bericht oder Studientext hier einfügen …")
+    n = st.slider("Sätze", 1, 6, 3)
+    if st.button("Zusammenfassen", disabled=not long.strip()):
+        st.success(summarize_mod.summarize(long, max_sentences=n))
 
 # --------------------------------------------------------------------------
 # TAB 7 — Briefing & Export

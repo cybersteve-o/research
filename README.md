@@ -6,9 +6,10 @@ condensing raw signals into a few evidence-backed decision drafts (spec §0).
 This repository implements **all three phases** of
 [`marketintelligencetoolspec`](#) (spec §8):
 
-- **Phase 1 — MVP core:** Scout + Extractor + Auditor · web/PDF/RSS/manual
-  ingestion · evidence-backed signal cards · deterministic hybrid scoring ·
-  weekly briefing.
+- **Phase 1 — MVP core:** Scout + Extractor + Auditor · ingestion from web, PDF
+  & other file formats, worldwide news + social RSS, and manual notes ·
+  authoritative-source registry across world markets · evidence-backed signal
+  cards · deterministic hybrid scoring · weekly briefing.
 - **Phase 2 — Decision support:** context dossier (RAG), Analyst + Strategist,
   cluster synthesis, learning loop, competitor dossiers, diff view, battlecards,
   hypotheses with auto-falsification, watchlist cadence, gold-set eval harness.
@@ -64,7 +65,9 @@ Quellen ─► Ingestion ─► Extraktion ─► Auditor ─► Scoring ─► 
 | `mci/llm/roles.py` | Scout, Extractor, Auditor — LLM path + offline fallback | §5.1 |
 | `mci/llm/prompts.py` | Prompt-Bibliothek: per-signal-type interpretation hints | §2, §5.1 |
 | `mci/llm/client.py` | Claude backend with **cost cap** + content cache | §5.7 |
-| `mci/ingestion/` | HTML (robots-aware), PDF (page locators), RSS, manual | §7.1, §7.4, §7.5 |
+| `mci/ingestion/` | HTML (robots-aware), PDF (page locators), multi-format upload (txt/md/csv/html), worldwide news + social RSS, manual | §7.1, §7.4, §7.5 |
+| `mci/sources.py` | World-market list + curated **authoritative source registry** per region (approval/norm/patent/statistics bodies) | §3.4, §5.5 |
+| `mci/research.py` | Gap-driven research plan with ready deep links (Google/News/X/Reddit/LinkedIn/registers) | §5.5 |
 | `mci/pipeline.py` | Orchestration, dedup, **triangulation → confirmed** | §7.1, §3.5 |
 | `mci/briefing.py` | Weekly briefing: Ebene 0 Lage + Ebene 1 Cockpit + Lückenliste | §4, §8 |
 | `mci/app.py` | Streamlit cockpit, Fakt/Ableitung/Hypothese split, 2-click evidence | §4 |
@@ -84,6 +87,12 @@ Quellen ─► Ingestion ─► Extraktion ─► Auditor ─► Scoring ─► 
 | `mci/hypotheses.py` | Hypotheses + automatic falsification (AI may refute, never confirm) | §3.8, §5.5 |
 | `mci/watchlist.py` | Watchlist cadence + gap-driven research | §5.2, §7.2 |
 | `mci/eval.py` + `gold_set/` | Gold-set + eval harness (regression on prompt change) | §5.6 |
+| `mci/alerts.py` | Frühwarnsystem: rule-based alerts on price moves, launches, approvals | §4 |
+| `mci/sentiment.py` | Voice-of-market sentiment per brand (offline lexicon, DE+EN) | §4 |
+| `mci/summarize.py` | Extractive few-sentence summaries of long reports/studies | §4 |
+| `mci/swot.py` | Competitive matrix + rule-derived SWOT per competitor | §4 |
+| `mci/trends.py` | Trend-Radar: rising-term momentum before mainstream | §4 |
+| `mci/assistant.py` | Evidence-grounded chat assistant (answers only from stored sources) | §4 |
 
 ### Phase 3 — forecasting & scenarios
 

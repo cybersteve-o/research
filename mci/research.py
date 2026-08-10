@@ -30,6 +30,14 @@ _ENGINES: dict[str, str] = {
     "Google": "https://www.google.com/search?q={q}",
     "News": "https://news.google.com/search?q={q}",
     "LinkedIn Jobs": "https://www.linkedin.com/jobs/search/?keywords={q}",
+    "LinkedIn": "https://www.linkedin.com/search/results/content/?keywords={q}",
+    "X/Twitter": "https://x.com/search?q={q}&f=live",
+    "Reddit": "https://www.reddit.com/search/?q={q}&sort=new",
+    "Instagram": "https://www.google.com/search?q=site:instagram.com+{q}",
+    "Facebook": "https://www.google.com/search?q=site:facebook.com+{q}",
+    "Scholar": "https://scholar.google.com/scholar?q={q}",
+    "Trustpilot": "https://www.trustpilot.com/search?query={q}",
+    "Google Reviews": "https://www.google.com/search?q={q}+reviews",
     "DIBt-Register": "https://www.dibt.de/de/service/zulassungsdownload?tx_solr[q]={q}",
 }
 
@@ -73,6 +81,20 @@ def _competitor_queries(store: Store) -> list[SearchQuery]:
             rationale="Stellenanzeigen verraten Kompetenzaufbau und Technologiepfad (E4, E6).",
             decision_link=["E4", "E6"],
             engines=("LinkedIn Jobs", "Google"),
+        ))
+        out.append(SearchQuery(
+            label=f"{c.name} — Aktivität (News/Social)",
+            query=f'"{c.name}"',
+            rationale="Weltweite Nachrichten und Social-Chatter zu jüngsten Aktivitäten (E5, E6).",
+            decision_link=["E5", "E6"],
+            engines=("News", "X/Twitter", "LinkedIn", "Reddit", "Instagram", "Facebook"),
+        ))
+        out.append(SearchQuery(
+            label=f"{c.name} — Bewertungen (Voice of Customer)",
+            query=f'"{c.name}"',
+            rationale="Kundenfeedback aus Bewertungsportalen für Sentiment und Schwächen (E3, E7).",
+            decision_link=["E3", "E7"],
+            engines=("Trustpilot", "Google Reviews"),
         ))
     return out
 
