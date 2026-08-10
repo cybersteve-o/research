@@ -87,6 +87,12 @@ Quellen ─► Ingestion ─► Extraktion ─► Auditor ─► Scoring ─► 
 | `mci/hypotheses.py` | Hypotheses + automatic falsification (AI may refute, never confirm) | §3.8, §5.5 |
 | `mci/watchlist.py` | Watchlist cadence + gap-driven research | §5.2, §7.2 |
 | `mci/eval.py` + `gold_set/` | Gold-set + eval harness (regression on prompt change) | §5.6 |
+| `mci/alerts.py` | Frühwarnsystem: rule-based alerts on price moves, launches, approvals | §4 |
+| `mci/sentiment.py` | Voice-of-market sentiment per brand (offline lexicon, DE+EN) | §4 |
+| `mci/summarize.py` | Extractive few-sentence summaries of long reports/studies | §4 |
+| `mci/swot.py` | Competitive matrix + rule-derived SWOT per competitor | §4 |
+| `mci/trends.py` | Trend-Radar: rising-term momentum before mainstream | §4 |
+| `mci/assistant.py` | Evidence-grounded chat assistant (answers only from stored sources) | §4 |
 
 ### Phase 3 — forecasting & scenarios
 
