@@ -94,6 +94,12 @@ Quellen ─► Ingestion ─► Extraktion ─► Auditor ─► Scoring ─► 
 | `mci/trends.py` | Trend-Radar: rising-term momentum before mainstream | §4 |
 | `mci/assistant.py` | Evidence-grounded chat assistant (answers only from stored sources) | §4 |
 | `mci/recommendation.py` | Overall situation report: findings → conclusions → prioritised recommendations across the whole data basis | §4, §5.4 |
+| `mci/tracking.py` | Entscheidungs-Nachhalten: recommendation → decision → outcome; hit rate + optimism bias | §5.5, §6.6.8 |
+| `mci/search.py` | Full-text + structured search over signals and evidence, with saved views | §4 |
+| `mci/reliability.py` | Source reliability: class prior + earned confirmation/refutation record | §3.4, §5.6 |
+| `mci/profile.py` | Own-company profile (lines, markets, positioning) — replaces the placeholder seed | §5.3 |
+| `mci/charts.py` + `mci/chartdata.py` | Validated-palette Altair charts and their (testable) data shaping | §4 |
+| `mci/demo_data.py` | Rich 14-month demo corpus for an end-to-end walkthrough | §8 |
 
 ### Phase 3 — forecasting & scenarios
 

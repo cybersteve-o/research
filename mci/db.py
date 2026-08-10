@@ -109,6 +109,13 @@ CREATE TABLE IF NOT EXISTS watchlist (
     last_run TEXT,
     data TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS decisions (
+    id TEXT PRIMARY KEY,
+    field_id TEXT,
+    data TEXT NOT NULL,
+    created_at TEXT
+);
 """
 
 
@@ -387,6 +394,30 @@ class Store:
 
         rows = self.conn.execute("SELECT data FROM watchlist").fetchall()
         return [WatchlistItem.model_validate_json(r["data"]) for r in rows]
+
+    # ---- Decisions (Nachhalten: Empfehlung -> Ergebnis) --------------------
+    def upsert_decision(self, record) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO decisions(id, field_id, data, created_at) "
+            "VALUES (?,?,?,?)",
+            (record.id, record.field_id, record.model_dump_json(),
+             record.decided_at.isoformat()),
+        )
+        self.conn.commit()
+
+    def list_decisions(self) -> list:
+        from .tracking import DecisionRecord
+
+        rows = self.conn.execute(
+            "SELECT data FROM decisions ORDER BY created_at DESC").fetchall()
+        return [DecisionRecord.model_validate_json(r["data"]) for r in rows]
+
+    def get_decision(self, decision_id: str):
+        from .tracking import DecisionRecord
+
+        row = self.conn.execute(
+            "SELECT data FROM decisions WHERE id=?", (decision_id,)).fetchone()
+        return DecisionRecord.model_validate_json(row["data"]) if row else None
 
     # ---- Meta (e.g. last briefing timestamp) ------------------------------
     def set_meta(self, key: str, value: str) -> None:
