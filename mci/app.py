@@ -10,9 +10,9 @@ tabs, so the tool reads as one workflow rather than a pile of features.
 This UI is optional; the core package and tests do not depend on Streamlit.
 
 Work areas (tabs): Übersicht (Lagebild, Frühwarnung, Assistent) · Recherche ·
-Signale · Wettbewerber · Trend-Radar · Entscheidungen · Szenario · Assistent ·
-Verwaltung (Stammdaten: Wettbewerber & Referenzmärkte anlegen/bearbeiten/löschen)
-· Briefing.
+Signale · Wettbewerber (incl. anlegen/bearbeiten/löschen) · Märkte (Länder-
+Steckbrief + Referenzmärkte verwalten) · Trend-Radar · Entscheidungen · Szenario
+· Assistent · Briefing.
 """
 
 from __future__ import annotations
@@ -123,6 +123,11 @@ def get_pipeline(store: Store) -> Pipeline:
     return Pipeline(store, focus_markets=FOCUS_MARKETS, focus_lines=FOCUS_LINES)
 
 
+def _csv(text: str) -> list[str]:
+    """Split a comma-separated input into a clean list."""
+    return [x.strip() for x in text.split(",") if x.strip()]
+
+
 def report(res) -> None:
     """Turn an IngestResult into a user-facing toast."""
     if res.ok:
@@ -185,17 +190,17 @@ k4.metric("Offene Wissenslücken", len(open_gaps),
 
 st.write("")
 
-(tab_home, tab_research, tab_signals, tab_comp, tab_trends, tab_dec,
- tab_scn, tab_chat, tab_manage, tab_brief) = st.tabs([
+(tab_home, tab_research, tab_signals, tab_comp, tab_markets, tab_trends, tab_dec,
+ tab_scn, tab_chat, tab_brief) = st.tabs([
     "🏠 Übersicht",
     "➕ Recherche & Eingabe",
     "📡 Signale",
     "🏢 Wettbewerber",
+    "🌍 Märkte",
     "📈 Trend-Radar",
     "🎯 Entscheidungen",
     "🔮 Szenario (E8)",
     "💬 Assistent",
-    "🗂️ Verwaltung",
     "📤 Briefing & Export",
 ])
 
@@ -556,8 +561,52 @@ with tab_comp:
         help="Alles zu einem Wettbewerber an einem Ort: Dossier, Launch-Rhythmus, "
              "Battlecard, Portfolio-Lücken und Spec-Share.",
     )
-    pick = st.selectbox("Wettbewerber wählen", [c.name for c in competitors])
-    chosen = next((c for c in competitors if c.name == pick), None)
+
+    with st.expander("⚙️ Wettbewerber anlegen / bearbeiten / löschen"):
+        names = ["➕ Neu anlegen"] + [c.name for c in competitors]
+        pick_c = st.selectbox("Auswählen", names, key="mng_comp_pick",
+                              help="Bestehenden zum Bearbeiten wählen oder „Neu anlegen“. "
+                                   "Änderungen wirken sofort im ganzen Tool.")
+        editing_c = next((c for c in competitors if c.name == pick_c), None)
+        with st.form("comp_form"):
+            name = st.text_input("Name*", value=editing_c.name if editing_c else "")
+            cc1, cc2 = st.columns(2)
+            country_i = cc1.text_input("Land", value=editing_c.country if editing_c else "")
+            hq = cc2.text_input("HQ", value=editing_c.hq if editing_c else "")
+            parent = st.text_input("Muttergesellschaft",
+                                   value=editing_c.parent_company if editing_c else "")
+            segments = st.text_input("Segmente (Komma-getrennt)",
+                                     value=", ".join(editing_c.segments) if editing_c else "")
+            aliases = st.text_input("Aliase (Komma-getrennt)",
+                                    value=", ".join(editing_c.aliases) if editing_c else "")
+            b1, b2 = st.columns(2)
+            save_c = b1.form_submit_button("💾 Speichern", type="primary",
+                                           use_container_width=True)
+            del_c = b2.form_submit_button("🗑️ Löschen", use_container_width=True,
+                                          disabled=editing_c is None)
+        if save_c:
+            if not name.strip():
+                st.error("Name ist erforderlich.")
+            else:
+                data = dict(name=name.strip(), country=country_i.strip(), hq=hq.strip(),
+                            parent_company=parent.strip(),
+                            segments=_csv(segments), aliases=_csv(aliases))
+                if editing_c:
+                    data["id"] = editing_c.id
+                store.upsert_competitor(Competitor(**data))
+                st.success(f"Gespeichert: {name.strip()}")
+                st.rerun()
+        if del_c and editing_c:
+            store.delete_competitor(editing_c.id)
+            st.warning(f"Gelöscht: {editing_c.name}")
+            st.rerun()
+
+    if competitors:
+        pick = st.selectbox("Wettbewerber wählen", [c.name for c in competitors])
+        chosen = next((c for c in competitors if c.name == pick), None)
+    else:
+        st.info("Noch keine Wettbewerber. Lege oben welche an.")
+        chosen = None
 
     if chosen:
         col1, col2 = st.columns(2)
@@ -637,19 +686,6 @@ with tab_comp:
                     st.dataframe(rows, use_container_width=True, hide_index=True)
                 else:
                     st.caption("Noch keine Nennungen erfasst.")
-
-        with st.container(border=True):
-            st.markdown("**🌍 Länder-Steckbrief**",
-                        help="Marktprofil je Fokusland: Bauindikatoren, Regulatorik, "
-                             "Wettbewerberdichte.")
-            cty = st.selectbox("Land", [c for c, _ in sources.WORLD_MARKETS],
-                               format_func=sources.market_name)
-            prof = country.build(store, cty)
-            cc1, cc2 = st.columns(2)
-            cc1.metric("Wettbewerberdichte", prof.competitor_density)
-            cc2.metric("Bauindikatoren", len(prof.construction_indicators))
-            if prof.competitors:
-                st.caption("Präsent: " + ", ".join(prof.competitors))
 
         cols_sw = st.columns(2)
         with cols_sw[0]:
@@ -932,115 +968,82 @@ with tab_chat:
         st.success(summarize_mod.summarize(long, max_sentences=n))
 
 # --------------------------------------------------------------------------
-# TAB — Verwaltung (Stammdaten: Wettbewerber & Referenzmärkte)
+# TAB — Märkte (Länder-Steckbrief + Referenzmärkte verwalten)
 # --------------------------------------------------------------------------
-def _csv(text: str) -> list[str]:
-    return [x.strip() for x in text.split(",") if x.strip()]
-
-
-with tab_manage:
+with tab_markets:
     st.subheader(
-        "Stammdaten verwalten",
+        "Märkte",
         divider="blue",
-        help="Wettbewerber und Referenzmärkte anlegen, bearbeiten und löschen. "
-             "Änderungen wirken sofort im ganzen Tool (Recherche, SWOT, "
-             "Sentiment, Frühwarnung, Lagebild …).",
+        help="Länder-/Marktprofile ansehen und eigene Referenzmärkte anlegen, "
+             "bearbeiten und löschen. Änderungen wirken sofort im ganzen Tool.",
     )
 
-    man_comp, man_mkt = st.columns(2)
+    with st.container(border=True):
+        st.markdown("**🌍 Länder-Steckbrief**",
+                    help="Marktprofil je Land: Bauindikatoren, Regulatorik, "
+                         "Wettbewerberdichte.")
+        cty = st.selectbox("Land", [c for c, _ in sources.WORLD_MARKETS],
+                           format_func=sources.market_name)
+        prof = country.build(store, cty)
+        cc1, cc2 = st.columns(2)
+        cc1.metric("Wettbewerberdichte", prof.competitor_density)
+        cc2.metric("Bauindikatoren", len(prof.construction_indicators))
+        if prof.competitors:
+            st.caption("Präsent: " + ", ".join(prof.competitors))
 
-    # ---- Wettbewerber ----
-    with man_comp:
-        st.markdown("### 🏢 Wettbewerber")
-        names = ["➕ Neu anlegen"] + [c.name for c in competitors]
-        pick_c = st.selectbox("Auswählen", names, key="mng_comp_pick",
-                              help="Bestehenden zum Bearbeiten wählen oder „Neu anlegen“.")
-        editing_c = next((c for c in competitors if c.name == pick_c), None)
+    st.subheader(
+        "Referenzmärkte verwalten",
+        divider="gray",
+        help="Eigene Marktdatensätze mit Größe, Wachstum, Kanalstruktur und Quelle.",
+    )
+    markets = store.list_markets()
+    m_labels = ["➕ Neu anlegen"] + [f"{m.country} · {m.region}".strip(" ·") for m in markets]
+    pick_m = st.selectbox("Auswählen", m_labels, key="mng_mkt_pick",
+                          help="Bestehenden zum Bearbeiten wählen oder „Neu anlegen“.")
+    editing_m = markets[m_labels.index(pick_m) - 1] if pick_m != "➕ Neu anlegen" else None
 
-        with st.form("comp_form"):
-            name = st.text_input("Name*", value=editing_c.name if editing_c else "")
-            cc1, cc2 = st.columns(2)
-            country = cc1.text_input("Land", value=editing_c.country if editing_c else "")
-            hq = cc2.text_input("HQ", value=editing_c.hq if editing_c else "")
-            parent = st.text_input("Muttergesellschaft",
-                                   value=editing_c.parent_company if editing_c else "")
-            segments = st.text_input("Segmente (Komma-getrennt)",
-                                     value=", ".join(editing_c.segments) if editing_c else "")
-            aliases = st.text_input("Aliase (Komma-getrennt)",
-                                    value=", ".join(editing_c.aliases) if editing_c else "")
-            b1, b2 = st.columns(2)
-            save_c = b1.form_submit_button("💾 Speichern", type="primary",
-                                           use_container_width=True)
-            del_c = b2.form_submit_button("🗑️ Löschen", use_container_width=True,
-                                          disabled=editing_c is None)
-        if save_c:
-            if not name.strip():
-                st.error("Name ist erforderlich.")
-            else:
-                data = dict(name=name.strip(), country=country.strip(), hq=hq.strip(),
-                            parent_company=parent.strip(),
-                            segments=_csv(segments), aliases=_csv(aliases))
-                if editing_c:
-                    data["id"] = editing_c.id
-                obj = Competitor(**data)
-                store.upsert_competitor(obj)
-                st.success(f"Gespeichert: {obj.name}")
-                st.rerun()
-        if del_c and editing_c:
-            store.delete_competitor(editing_c.id)
-            st.warning(f"Gelöscht: {editing_c.name}")
+    with st.form("mkt_form"):
+        mcountry = st.text_input("Land / Markt*",
+                                 value=editing_m.country if editing_m else "",
+                                 help="Ländercode oder Marktname, z. B. DE, US, „DACH“.")
+        mm0a, mm0b = st.columns(2)
+        mregion = mm0a.text_input("Region", value=editing_m.region if editing_m else "")
+        mchannel = mm0b.text_input("Kanalstruktur",
+                                   value=editing_m.channel_structure if editing_m else "")
+        mm1, mm2 = st.columns(2)
+        msize = mm1.text_input("Größe (Schätzung)",
+                               value=editing_m.size_estimate if editing_m else "")
+        mgrowth = mm2.text_input("Wachstum",
+                                 value=editing_m.growth_rate if editing_m else "")
+        msource = st.text_input("Quelle", value=editing_m.source_ref if editing_m else "")
+        mb1, mb2 = st.columns(2)
+        save_m = mb1.form_submit_button("💾 Speichern", type="primary",
+                                        use_container_width=True)
+        del_m = mb2.form_submit_button("🗑️ Löschen", use_container_width=True,
+                                       disabled=editing_m is None)
+    if save_m:
+        if not mcountry.strip():
+            st.error("Land / Markt ist erforderlich.")
+        else:
+            data = dict(country=mcountry.strip(), region=mregion.strip(),
+                        channel_structure=mchannel.strip(), size_estimate=msize.strip(),
+                        growth_rate=mgrowth.strip(), source_ref=msource.strip())
+            if editing_m:
+                data["id"] = editing_m.id
+            store.upsert_market(Market(**data))
+            st.success(f"Gespeichert: {mcountry.strip()}")
             st.rerun()
+    if del_m and editing_m:
+        store.delete_market(editing_m.id)
+        st.warning(f"Gelöscht: {editing_m.country}")
+        st.rerun()
 
-    # ---- Referenzmärkte ----
-    with man_mkt:
-        st.markdown("### 🌍 Referenzmärkte")
-        markets = store.list_markets()
-        m_labels = ["➕ Neu anlegen"] + [f"{m.country} · {m.region}".strip(" ·") for m in markets]
-        pick_m = st.selectbox("Auswählen", m_labels, key="mng_mkt_pick")
-        editing_m = markets[m_labels.index(pick_m) - 1] if pick_m != "➕ Neu anlegen" else None
-
-        with st.form("mkt_form"):
-            mcountry = st.text_input("Land / Markt*",
-                                     value=editing_m.country if editing_m else "",
-                                     help="Ländercode oder Marktname, z. B. DE, US, „DACH“.")
-            mregion = st.text_input("Region", value=editing_m.region if editing_m else "")
-            mchannel = st.text_input("Kanalstruktur",
-                                     value=editing_m.channel_structure if editing_m else "")
-            mm1, mm2 = st.columns(2)
-            msize = mm1.text_input("Größe (Schätzung)",
-                                   value=editing_m.size_estimate if editing_m else "")
-            mgrowth = mm2.text_input("Wachstum",
-                                     value=editing_m.growth_rate if editing_m else "")
-            msource = st.text_input("Quelle", value=editing_m.source_ref if editing_m else "")
-            mb1, mb2 = st.columns(2)
-            save_m = mb1.form_submit_button("💾 Speichern", type="primary",
-                                            use_container_width=True)
-            del_m = mb2.form_submit_button("🗑️ Löschen", use_container_width=True,
-                                           disabled=editing_m is None)
-        if save_m:
-            if not mcountry.strip():
-                st.error("Land / Markt ist erforderlich.")
-            else:
-                data = dict(country=mcountry.strip(), region=mregion.strip(),
-                            channel_structure=mchannel.strip(), size_estimate=msize.strip(),
-                            growth_rate=mgrowth.strip(), source_ref=msource.strip())
-                if editing_m:
-                    data["id"] = editing_m.id
-                obj = Market(**data)
-                store.upsert_market(obj)
-                st.success(f"Gespeichert: {obj.country}")
-                st.rerun()
-        if del_m and editing_m:
-            store.delete_market(editing_m.id)
-            st.warning(f"Gelöscht: {editing_m.country}")
-            st.rerun()
-
-        if markets:
-            st.caption("Angelegte Referenzmärkte:")
-            st.dataframe(
-                [{"Land": m.country, "Region": m.region, "Größe": m.size_estimate,
-                  "Wachstum": m.growth_rate} for m in markets],
-                use_container_width=True, hide_index=True)
+    if markets:
+        st.caption("Angelegte Referenzmärkte:")
+        st.dataframe(
+            [{"Land": m.country, "Region": m.region, "Kanal": m.channel_structure,
+              "Größe": m.size_estimate, "Wachstum": m.growth_rate} for m in markets],
+            use_container_width=True, hide_index=True)
 
 
 # --------------------------------------------------------------------------
