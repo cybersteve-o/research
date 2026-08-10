@@ -58,12 +58,22 @@ class RawDocument:
 # later propose a reclassification (Phase 2).
 
 _CLASS_A_DOMAINS = {
-    "epo.org", "uspto.gov", "wipo.int", "dpma.de",         # patent offices
-    "dibt.de", "eota.eu", "iccsafe.org", "nrc-cnrc.gc.ca",  # norm/approval
-    "sec.gov", "bundesanzeiger.de",                         # filings
+    # patent / IP offices worldwide
+    "epo.org", "uspto.gov", "wipo.int", "dpma.de", "inpi.fr", "jpo.go.jp",
+    "j-platpat.inpit.go.jp", "cnipa.gov.cn", "ipindia.gov.in", "turkpatent.gov.tr",
+    "ic.gc.ca", "gov.br", "patentscope.wipo.int", "espacenet.com",
+    # norm / building-approval bodies
+    "dibt.de", "eota.eu", "iccsafe.org", "icc-es.org", "nrc-cnrc.gc.ca",
+    "nrc.canada.ca", "cstb.fr", "iso.org", "cen.eu", "astm.org", "din.de",
+    "bsigroup.com", "bis.gov.in", "abnt.org.br", "eur-lex.europa.eu",
+    # filings / statistics / government
+    "sec.gov", "bundesanzeiger.de", "destatis.de", "ec.europa.eu", "eurostat.ec.europa.eu",
+    "ons.gov.uk", "gov.uk", "census.gov", "stats.gov.cn", "e-stat.go.jp",
+    "tuik.gov.tr", "europa.eu",
 }
 _CLASS_B_HINTS = ("verband", "association", "fachpresse", "study", "studie",
-                  "marktforschung", "research", "institut")
+                  "marktforschung", "research", "institut", "journal", "trade",
+                  "scholar.google")
 _CLASS_C_DOMAINS = {
     "linkedin.com", "youtube.com", "youtu.be", "reddit.com",
     "facebook.com", "instagram.com", "x.com", "twitter.com", "tiktok.com",
@@ -84,6 +94,7 @@ def classify_source(url: str, publisher: str = "") -> SourceClass:
     return SourceClass.C
 
 
+from .files import extract_file  # noqa: E402
 from .html import fetch_html  # noqa: E402
 from .manual import manual_entry  # noqa: E402
 from .pdf import extract_pdf  # noqa: E402
@@ -94,6 +105,7 @@ __all__ = [
     "classify_source",
     "fetch_html",
     "extract_pdf",
+    "extract_file",
     "fetch_rss",
     "manual_entry",
 ]

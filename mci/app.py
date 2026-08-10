@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from mci import correlation, country, portfolio, research, specshare
+from mci import correlation, country, portfolio, research, sources, specshare
 from mci import battlecard as battlecard_mod
 from mci import cadence as cadence_mod
 from mci import competitor as competitor_mod
@@ -26,7 +26,8 @@ from mci.config import SETTINGS
 from mci.db import Store
 from mci.demo import SAMPLES
 from mci.export import one_pager_markdown
-from mci.ingestion import fetch_html
+from mci.ingestion import extract_file, fetch_html, fetch_rss
+from mci.ingestion.feeds import CURATED_FEEDS, google_news_search_rss
 from mci.ingestion.manual import manual_entry
 from mci.models import SignalStatus, SourceClass
 from mci.pipeline import Pipeline
@@ -254,6 +255,57 @@ with tab_research:
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"Ingestion fehlgeschlagen: {exc}")
 
+    col_c, col_d = st.columns(2)
+    with col_c:
+        with st.container(border=True):
+            st.markdown("**📄 Datei einspielen (PDF & mehr)**")
+            st.caption("PDF, TXT, Markdown, CSV, HTML. PDFs werden seitenweise mit "
+                       "Seitenlokator als Evidenz erfasst.")
+            up = st.file_uploader(
+                "Datei(en) wählen", type=["pdf", "txt", "md", "csv", "tsv", "html", "htm", "json"],
+                accept_multiple_files=True, label_visibility="collapsed",
+                help="Eigene Berichte, Studien, Kataloge, Preislisten oder gespeicherte Artikel.")
+            klass_f = st.selectbox("Quellenklasse", [c.value for c in SourceClass], index=0,
+                                   key="fileclass",
+                                   help="Eigene Dokumente/Studien i. d. R. A.")
+            if st.button("Dateien extrahieren", type="primary", disabled=not up):
+                import tempfile as _tmp
+                from pathlib import Path as _Path
+                added = 0
+                for uf in up or []:
+                    tmp = _Path(_tmp.mkdtemp()) / uf.name
+                    tmp.write_bytes(uf.getbuffer())
+                    try:
+                        for doc in extract_file(tmp, source_class=SourceClass(klass_f)):
+                            added += 1 if pipe.ingest(doc).ok else 0
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"{uf.name}: {exc}")
+                if added:
+                    st.success(f"{added} Signal(e) aus Datei(en) extrahiert.")
+
+    with col_d:
+        with st.container(border=True):
+            st.markdown("**🌐 News weltweit (RSS)**")
+            st.caption("Google-News-Feeds pro Thema oder Länder-Edition. News sind "
+                       "schwache Evidenz — erst mit Zweitquelle wird daraus „bestätigt“.")
+            topic = st.text_input("Thema / Suchbegriff",
+                                  placeholder="z. B. Wettbewerbername, „Fassadenplatte Zulassung“")
+            edition = st.selectbox("Länder-Edition (Top-News)", ["(keine)"] + list(CURATED_FEEDS),
+                                   help="Alternativ zum Thema: die Top-News einer Weltregion.")
+            limit = st.slider("Max. Einträge", 3, 25, 8)
+            if st.button("News abrufen & extrahieren", type="primary"):
+                feed = (google_news_search_rss(topic) if topic.strip()
+                        else CURATED_FEEDS.get(edition) if edition != "(keine)" else None)
+                if not feed:
+                    st.warning("Thema eingeben oder eine Länder-Edition wählen.")
+                else:
+                    try:
+                        docs = fetch_rss(feed, limit=limit)
+                        added = sum(1 for d in docs if pipe.ingest(d).ok)
+                        st.success(f"{added}/{len(docs)} News-Einträge zu Signalen verdichtet.")
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"News-Abruf fehlgeschlagen: {exc}")
+
     st.subheader(
         "🔎 Recherche-Assistent (lückengetrieben)",
         divider="gray",
@@ -273,6 +325,23 @@ with tab_research:
             with top[1]:
                 link_md = "  ·  ".join(f"[{name}]({href})" for name, href in sq.links.items())
                 st.markdown("🔗 " + link_md)
+
+    st.subheader(
+        "🏛️ Autoritative Quellen weltweit",
+        divider="gray",
+        help="Kuratiertes Register belastbarer Erstquellen je Markt — "
+             "Zulassungs-/Norm-/Patent-/Statistikstellen. Immer von einer "
+             "reputablen Quelle aus starten, nie von einem Blog.",
+    )
+    mkt = st.selectbox(
+        "Markt", [c for c, _ in sources.WORLD_MARKETS],
+        format_func=sources.market_name,
+        help="Weltmärkte — nicht auf den Heimatmarkt beschränkt.")
+    auth = sources.authoritative_for(mkt)
+    acols = st.columns(2)
+    for i, s in enumerate(auth):
+        with acols[i % 2]:
+            st.markdown(f"[{s.name}]({s.url}) · `{s.klass}` — {s.scope}")
 
     st.subheader(
         "Beispieldaten",
@@ -460,7 +529,8 @@ with tab_comp:
             st.markdown("**🌍 Länder-Steckbrief**",
                         help="Marktprofil je Fokusland: Bauindikatoren, Regulatorik, "
                              "Wettbewerberdichte.")
-            cty = st.selectbox("Land", FOCUS_MARKETS or ["DE"])
+            cty = st.selectbox("Land", [c for c, _ in sources.WORLD_MARKETS],
+                               format_func=sources.market_name)
             prof = country.build(store, cty)
             cc1, cc2 = st.columns(2)
             cc1.metric("Wettbewerberdichte", prof.competitor_density)
@@ -568,7 +638,8 @@ with tab_scn:
         c1, c2, c3 = st.columns(3)
         target = c1.number_input("Ziel: +pp Marktanteil", value=2.0, step=0.5,
                                  help="Angestrebter Marktanteilsgewinn in Prozentpunkten.")
-        market = c2.selectbox("Markt", FOCUS_MARKETS or ["DE"])
+        market = c2.selectbox("Markt", [c for c, _ in sources.WORLD_MARKETS],
+                              format_func=sources.market_name)
         horizon = c3.number_input("Horizont (Monate)", value=24, step=6, min_value=6)
 
         st.markdown("**Treiber 1 — Listungstiefe**")

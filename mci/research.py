@@ -30,6 +30,10 @@ _ENGINES: dict[str, str] = {
     "Google": "https://www.google.com/search?q={q}",
     "News": "https://news.google.com/search?q={q}",
     "LinkedIn Jobs": "https://www.linkedin.com/jobs/search/?keywords={q}",
+    "LinkedIn": "https://www.linkedin.com/search/results/content/?keywords={q}",
+    "X/Twitter": "https://x.com/search?q={q}&f=live",
+    "Reddit": "https://www.reddit.com/search/?q={q}&sort=new",
+    "Scholar": "https://scholar.google.com/scholar?q={q}",
     "DIBt-Register": "https://www.dibt.de/de/service/zulassungsdownload?tx_solr[q]={q}",
 }
 
@@ -73,6 +77,13 @@ def _competitor_queries(store: Store) -> list[SearchQuery]:
             rationale="Stellenanzeigen verraten Kompetenzaufbau und Technologiepfad (E4, E6).",
             decision_link=["E4", "E6"],
             engines=("LinkedIn Jobs", "Google"),
+        ))
+        out.append(SearchQuery(
+            label=f"{c.name} — Aktivität (News/Social)",
+            query=f'"{c.name}"',
+            rationale="Weltweite Nachrichten und Social-Chatter zu jüngsten Aktivitäten (E5, E6).",
+            decision_link=["E5", "E6"],
+            engines=("News", "X/Twitter", "LinkedIn", "Reddit"),
         ))
     return out
 
