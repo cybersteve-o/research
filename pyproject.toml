@@ -18,7 +18,7 @@ ui = ["streamlit>=1.36"]
 dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]
-include = ["mci*"]
+include = ["mci*", "gtm*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

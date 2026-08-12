@@ -3,6 +3,14 @@
 A **KI-gestützte Ableitungsmaschine**, not a news aggregator. Value comes from
 condensing raw signals into a few evidence-backed decision drafts (spec §0).
 
+> **Zwei Anwendungen in diesem Repository.**
+> `mci/` beantwortet *„Was passiert draußen, und warum?"* — Signale, Wettbewerb,
+> Szenarien. `gtm/` beantwortet *„Was tun wir, und hat es gewirkt?"* — die
+> Planlücke, das gemeinsame Maßnahmenportfolio von Vertrieb und Marketing, die
+> Wirkungsbilanz. Zusammen mit dem Absatzforecast bilden sie einen Regelkreis
+> statt drei nebeneinanderstehender Werkzeuge. Siehe
+> [Die dritte Säule](#die-dritte-säule--wirkungs--und-allokationscockpit-gtm).
+
 This repository implements **all three phases** of
 [`marketintelligencetoolspec`](#) (spec §8):
 
@@ -167,6 +175,76 @@ the historical best observed forces "unplausibel"); mandatory sensitivity
 (tornado), breakeven, extrapolation + denominator warnings; a scenario without a
 modeled competitor response is flagged **incomplete**; and the Nachhaltemodus
 compares assumption vs. actual over cycles to reveal systematic optimism.
+
+## Die dritte Säule — Wirkungs- und Allokationscockpit (`gtm/`)
+
+Der Absatzforecast sagt, **wo wir landen**. Das MCI-Tool sagt, **warum**. Beide
+sind erkennend: keines bindet Geld, Kapazität oder Verantwortung. Genau dort
+bricht es in der Praxis ab — die Lücke ist erklärt, und dann wird über
+Maßnahmen gestritten, die sich nicht vergleichen lassen.
+
+`gtm/` schließt den Kreis:
+
+```
+Forecast-Lücke gegen Plan
+   └─► Ursachenzerlegung (Revenue Bridge, belegt aus MCI-Signalen)
+         └─► Maßnahmenportfolio — Vertrieb UND Marketing in einer Wirkungswährung
+               └─► Allokation über Märkte unter Budget-, Kapazitäts- und Aufmerksamkeitsgrenze
+                     └─► Nachhalten: erwartete gegen eingetretene Wirkung
+                           └─► Playbook-Transfer zwischen Märkten
+```
+
+```bash
+python -m gtm.demo              # ganze Kette offline, ohne API-Schlüssel
+streamlit run gtm/app.py        # Cockpit
+pytest -q tests/test_gtm_*.py   # 66 Tests
+```
+
+### Was das Werkzeug unbequem macht
+
+Ein Planungswerkzeug ist nur so viel wert wie die Wahrheiten, die es nicht
+verschweigt. Vier davon sind fest eingebaut:
+
+| Eingebaute Grenze | Warum |
+|---|---|
+| **Der unerklärte Rest bleibt stehen** | Was die Zerlegung nicht erklärt, wird als eigene Stufe ausgewiesen, nie auf die anderen verteilt. Eine Brücke mit 35 % unerklärt ist eine Rechercheaufgabe, keine Entscheidungsgrundlage. |
+| **Exogenes wird markiert** | Gegen ein schrumpfendes Marktvolumen hilft kein Budget. Der Teil gehört in die Planrevision. |
+| **Horizont schlägt Wirkungsgrad** | Die Maßnahme mit dem höchsten Wirkungsgrad im Katalog (Spezifikationsarbeit, 27 Monate Wirkzeit) trägt zur Jahreslücke **nichts** bei. Das Cockpit weist Wirkung *im Horizont* und *eingeschwungen* immer getrennt aus. |
+| **Ursachendeckel** | Maßnahmen können zusammen nie mehr zurückholen, als die Ursache an Lücke hergibt — sonst summieren sich Pläne auf ein Vielfaches des Problems. |
+
+### Wo die Zahlen herkommen
+
+Dieselbe Hausregel wie in `mci`: **die KI setzt keine Zahlen.** Jeder Euro folgt
+aus einer Kette, die `effects.breakdown()` Glied für Glied ausgibt:
+
+```
+adressierte Lücke × Wirkungsgrad(Band) × Sättigung(Dosis)
+                  × Evidenzabschlag × Realisierungsanteil(Horizont)
+```
+
+Die LLM-Rollen liefern Ursachenhypothesen, Beschlussbegründung und Gegenrede —
+der Advocatus Diaboli sieht dabei das Ergebnis, aber **nicht** die Begründung,
+sonst bekommt man eine höfliche Umformulierung statt eines Einwands. Ohne
+API-Schlüssel läuft alles über den deterministischen Offline-Pfad.
+
+### Module
+
+| Modul | Aufgabe |
+|---|---|
+| `gtm/forecast.py` | Schnittstelle zur ersten Säule: CSV/JSON/API → Planzeilen, mit deutscher **und** englischer Zahlenschreibweise |
+| `gtm/bridge.py` | Revenue Bridge Plan ▸ Ursachen ▸ Forecast, inklusive unerklärtem Rest und Überattributions-Prüfung |
+| `gtm/link.py` | Kopplung an `mci`: Signale als Beleg je Brückenstufe, Konfidenz aus Quellenklasse und Triangulation, Rechercheaufträge zurück |
+| `gtm/catalog.py` | Maßnahmenkatalog — Vertrieb und Marketing in *einer* Tabelle, Struktur wie `mci/scenario/levers.py` |
+| `gtm/effects.py` | Wirkungsrechnung: Sättigung, Realisierungsanteil, Evidenzabschlag, Mindestdosis, Amortisationsgrenze |
+| `gtm/allocate.py` | Grenznutzen-Allokation unter Budget, Kapazität und Aufmerksamkeitsgrenze; Effizienzgrenze; dominierte Maßnahmen |
+| `gtm/tracking.py` | Trefferquote, Optimismus-Bias je Träger, **Kalibrierung** der Evidenzabschläge gegen die Wirklichkeit |
+| `gtm/playbook.py` | Marktähnlichkeit und Übertragbarkeit — mit den Einwänden gleich dabei |
+| `gtm/export.py` | Beschluss-Einseiter (enthält die Gegenrede) und CSV |
+| `gtm/app.py` | Streamlit-Cockpit in sieben Reitern |
+
+Die Kopplung an `mci` ist **weich**: fehlt das Paket oder seine Datenbank, läuft
+das Cockpit unverändert weiter — die Ursachen sind dann eben unbelegt, und die
+Oberfläche sagt das auch.
 
 ## Everything runs offline
 
